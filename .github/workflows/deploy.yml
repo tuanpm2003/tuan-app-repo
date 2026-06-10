@@ -1,0 +1,49 @@
+name: Build and Update GitOps
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  IMAGE_NAME: ghcr.io/tuanpm2003/tuan-app-repo
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout app repo
+        uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        run: |
+          docker build -t $IMAGE_NAME:${{ github.sha }} .
+          docker push $IMAGE_NAME:${{ github.sha }}
+
+      - name: Checkout GitOps repo
+        uses: actions/checkout@v4
+        with:
+          repository: tuanpm2003/tuan-gitops-repo
+          token: ${{ secrets.GITOPS_TOKEN }}
+          path: gitops
+
+      - name: Update image tag
+        run: |
+          cd gitops
+          sed -i "s|image: .*|image: $IMAGE_NAME:${{ github.sha }}|" apps/demo-app/deployment.yaml
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add apps/demo-app/deployment.yaml
+          git commit -m "deploy: update tuan-app-repo image to ${{ github.sha }}" || exit 0
+          git push
